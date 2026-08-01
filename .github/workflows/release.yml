@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify tag and tests
+        run: |
+          version="$(python eapx.py --version)"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          python -m py_compile eapx.py test_eapx.py tools/smoke_external.py
+          python -m unittest discover
+          python eapx.py check --recipe examples/synthetic.eapx.json
+      - name: Build release files from the tagged commit
+        run: |
+          mkdir -p dist
+          cp eapx.py recipe.schema.json README.md DESIGN.md CHANGELOG.md LICENSE dist/
+          cp docs/RECIPES.md docs/CONSUMING.md docs/PORTMASTER.md dist/
+          cp examples/synthetic.eapx.json dist/
+          (cd dist && sha256sum eapx.py recipe.schema.json README.md DESIGN.md \
+            CHANGELOG.md LICENSE RECIPES.md CONSUMING.md PORTMASTER.md \
+            synthetic.eapx.json > SHA256SUMS)
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "eapx ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag

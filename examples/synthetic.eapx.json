@@ -1,0 +1,80 @@
+{
+  "$schema": "../recipe.schema.json",
+  "schema": 1,
+  "id": "synthetic-port",
+  "version": "1",
+  "requires_eapx": ">=0.2.0",
+  "title": "Synthetic Example",
+  "abi_order": [
+    "arm64-v8a",
+    "armeabi-v7a"
+  ],
+  "input": {
+    "search_dirs": [
+      "gamedata",
+      "."
+    ]
+  },
+  "extract": [
+    {
+      "id": "native",
+      "destination": "lib/{abi}/libsample.so",
+      "source": {
+        "kind": "entry",
+        "patterns": [
+          "lib/{abi}/libsample.so"
+        ]
+      },
+      "validate": {
+        "min_size": 64,
+        "elf_machine": "{abi}"
+      }
+    },
+    {
+      "id": "payload",
+      "destination": "data",
+      "source": {
+        "kind": "entries",
+        "patterns": [
+          "assets/data/*"
+        ],
+        "strip_prefix": "assets/data/"
+      },
+      "validate": {
+        "min_files": 1,
+        "min_bytes": 1
+      }
+    }
+  ],
+  "validate": [
+    {
+      "path": "lib/{abi}/libsample.so",
+      "elf_machine": "{abi}"
+    },
+    {
+      "path": "data",
+      "min_files": 1
+    }
+  ],
+  "profiles": [
+    {
+      "id": "reference",
+      "description": "Synthetic reference donor",
+      "validate": [
+        {
+          "path": "data/signature.bin",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ],
+  "commit": [
+    "lib",
+    "data"
+  ],
+  "marker": ".eapx-synthetic.json",
+  "log": "eapx.log",
+  "space": {
+    "safety_bytes": 67108864
+  }
+}

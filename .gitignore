@@ -1,0 +1,6 @@
+__pycache__/
+.claude/
+*.py[cod]
+.coverage
+.pytest_cache/
+dist/

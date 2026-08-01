@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/EapRules/eapx/raw/main/recipe.schema.json",
+  "title": "eapx recipe schema 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "extract", "commit"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "version": {"type": ["string", "integer"]},
+    "requires_eapx": {
+      "type": "string",
+      "pattern": "^>=[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "title": {"type": "string", "minLength": 1},
+    "abi_order": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "search_dirs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "extract": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/rule"}
+    },
+    "hooks": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/hook"}
+    },
+    "validate": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/outputCheck"}
+    },
+    "profiles": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/profile"}
+    },
+    "commit": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "exclusive": {"type": "boolean"}
+            }
+          }
+        ]
+      }
+    },
+    "marker": {"type": "string", "minLength": 1},
+    "log": {"type": "string", "minLength": 1},
+    "placeholder": {"type": "string", "minLength": 1},
+    "space": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "safety_bytes": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "sha256": {
+      "oneOf": [
+        {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+        }
+      ]
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "size": {"type": "integer", "minimum": 0},
+        "min_size": {"type": "integer", "minimum": 0},
+        "max_size": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "elf_machine": {"type": "string", "minLength": 1},
+        "min_files": {"type": "integer", "minimum": 0},
+        "max_files": {"type": "integer", "minimum": 0},
+        "min_bytes": {"type": "integer", "minimum": 0},
+        "max_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "outputCheck": {
+      "allOf": [
+        {"$ref": "#/$defs/validation"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "size": {}, "min_size": {}, "max_size": {}, "sha256": {},
+            "elf_machine": {}, "min_files": {}, "max_files": {},
+            "min_bytes": {}, "max_bytes": {}
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "destination", "source"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "description": {"type": "string"},
+        "required": {"type": "boolean"},
+        "destination": {"type": "string", "minLength": 1},
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "patterns"],
+          "properties": {
+            "kind": {"enum": ["entry", "entries", "blob"]},
+            "patterns": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "strip_prefix": {"type": "string", "minLength": 1}
+          }
+        },
+        "validate": {"$ref": "#/$defs/validation"}
+      }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "argv"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "cwd": {"type": "string", "minLength": 1},
+        "env": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+        },
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "checkpoint": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/outputCheck"}
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "validate"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "description": {"type": "string"},
+        "validate": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/outputCheck"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.7", "3.9", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m py_compile eapx.py test_eapx.py tools/smoke_external.py
+      - run: python test_eapx.py
+      - run: python -m unittest discover
+      - run: python eapx.py check --recipe examples/synthetic.eapx.json
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install check-jsonschema
+      - run: check-jsonschema --schemafile recipe.schema.json examples/*.eapx.json
+      - name: Engine remains generic
+        run: |
+          if grep -Eiq 'dead[[:space:]_-]*space|mass[[:space:]_-]*effect' eapx.py; then
+            echo 'game-specific name found in eapx.py' >&2
+            exit 1
+          fi
+      - run: test "$(python eapx.py --version)" = "0.2.0"
