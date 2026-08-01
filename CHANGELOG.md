@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Brand the optional TTY progress screen as EAPX, “Android Port eXtractor”,
   with a `BY EAPRULES` footer.

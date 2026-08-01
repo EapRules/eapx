@@ -25,7 +25,7 @@ import time
 import uuid
 import zipfile
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 FORMAT_VERSION = 1
 CHUNK_SIZE = 1 << 20
 DEFAULT_SAFETY_BYTES = 128 << 20

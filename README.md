@@ -37,6 +37,9 @@ Version 0.3.0 adds optional `critical_regions` validation for single files.
 A known full-file SHA-256 remains the fast path; an unknown full hash may fall
 back to a recipe-declared digest of the exact byte ranges a port depends on.
 
+Version 0.4.0 adds the branded EAPX TTY progress screen and formalizes the
+multi-source donor contract for APKs combined with external Android data.
+
 Recipes without these fields retain the 0.1.0 behavior. See
 [`docs/RECIPES.md`](docs/RECIPES.md), the
 [`recipe.schema.json`](recipe.schema.json), and the synthetic
@@ -54,8 +57,8 @@ Ports should vendor an exact copy; runtime downloads, pip, and submodules are
 not part of the contract:
 
 ```text
-EAPX_VERSION=0.3.0
-EAPX_SHA256=2b029be88b23c30aba14e25c6379f67af09f6c73f4f816e163c78d60eaaee33e
+EAPX_VERSION=0.4.0
+EAPX_SHA256=1af59ef2250c6e42a1bb32c380dc09ea3a1f7ea965288ac4c59d54cc9664070c
 ```
 
 Details are in [`docs/CONSUMING.md`](docs/CONSUMING.md). Architectural and

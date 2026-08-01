@@ -3,8 +3,8 @@
 The distribution contract is an exact offline copy:
 
 ```text
-EAPX_VERSION=0.3.0
-EAPX_SHA256=2b029be88b23c30aba14e25c6379f67af09f6c73f4f816e163c78d60eaaee33e
+EAPX_VERSION=0.4.0
+EAPX_SHA256=1af59ef2250c6e42a1bb32c380dc09ea3a1f7ea965288ac4c59d54cc9664070c
 ```
 
 For a port release:
