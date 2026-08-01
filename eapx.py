@@ -25,7 +25,7 @@ import time
 import uuid
 import zipfile
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 FORMAT_VERSION = 1
 CHUNK_SIZE = 1 << 20
 DEFAULT_SAFETY_BYTES = 128 << 20
@@ -270,6 +270,7 @@ class DigestCache:
     def __init__(self):
         self._files = {}
         self._members = {}
+        self._region_digests = {}
         self.bytes_read = 0
 
     def file(self, path):
@@ -307,6 +308,9 @@ class DigestCache:
         prefix = os.path.realpath(prefix)
         for key in [k for k in self._files if k[0].startswith(prefix)]:
             del self._files[key]
+        for key in [k for k in self._region_digests
+                    if k[0] == "file" and k[1].startswith(prefix)]:
+            del self._region_digests[key]
 
     def remember(self, path, sha256, crc, size):
         """Seed the cache for a file we just wrote and already hashed."""
@@ -336,6 +340,60 @@ class DigestCache:
         result = (sha.hexdigest(), crc & 0xFFFFFFFF, info.file_size)
         self._members[key] = result
         return result
+
+    def _critical_regions(self, key, opener, regions, label):
+        signature = tuple((region["offset"], region["size"]) for region in regions)
+        cache_key = key + (signature,)
+        cached = self._region_digests.get(cache_key)
+        if cached is not None:
+            return cached
+        sha = hashlib.sha256()
+        try:
+            with opener() as stream:
+                for region in regions:
+                    offset = region["offset"]
+                    remaining = region["size"]
+                    if stream.seek(offset) != offset:
+                        raise SourceError(
+                            "%s: cannot seek to critical region offset %d"
+                            % (label, offset)
+                        )
+                    while remaining:
+                        block = stream.read(min(CHUNK_SIZE, remaining))
+                        if not block:
+                            raise SourceError(
+                                "%s: critical region at offset %d is truncated"
+                                % (label, offset)
+                            )
+                        sha.update(block)
+                        self.bytes_read += len(block)
+                        remaining -= len(block)
+        except SourceError:
+            raise
+        except (OSError, ValueError, zipfile.BadZipFile) as error:
+            raise SourceError("cannot read critical regions from %s: %s" % (label, error))
+        result = sha.hexdigest()
+        self._region_digests[cache_key] = result
+        return result
+
+    def file_regions(self, path, regions):
+        try:
+            info = os.stat(path, follow_symlinks=False)
+        except OSError as error:
+            raise SourceError("cannot stat %s: %s" % (path, error))
+        real = os.path.realpath(path)
+        key = ("file", real, info.st_size, info.st_mtime_ns)
+        return self._critical_regions(
+            key, lambda: open(path, "rb"), regions, path
+        )
+
+    def member_regions(self, archive, name, regions):
+        info = archive.info(name)
+        key = ("member", archive.path, name, info.file_size, info.CRC)
+        return self._critical_regions(
+            key, lambda: archive.open(name), regions,
+            "%s:%s" % (archive.path, name),
+        )
 
 
 def elf_identity(header):
@@ -571,11 +629,16 @@ SEMANTIC_KEYS = {
 RULE_KEYS = {"id", "description", "required", "destination", "source", "validate"}
 SOURCE_KEYS = {"kind", "patterns", "strip_prefix"}
 HOOK_KEYS = {"id", "argv", "cwd", "env", "timeout_seconds", "checkpoint"}
-FILE_VALIDATORS = {"size", "min_size", "max_size", "sha256", "elf_machine"}
+FILE_VALIDATORS = {
+    "size", "min_size", "max_size", "sha256", "critical_regions",
+    "elf_machine",
+}
 TREE_VALIDATORS = {"min_files", "max_files", "min_bytes", "max_bytes"}
 VALIDATE_KEYS = FILE_VALIDATORS | TREE_VALIDATORS | {"path"}
 COMMIT_KEYS = {"path", "exclusive"}
 PROFILE_KEYS = {"id", "description", "validate"}
+CRITICAL_REGIONS_KEYS = {"regions", "sha256"}
+CRITICAL_REGION_KEYS = {"offset", "size"}
 SOURCE_KINDS = {"entry", "entries", "blob"}
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 ENV_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -745,6 +808,45 @@ class Recipe:
                 if not isinstance(digest, str) or not re.match(r"^[0-9a-fA-F]{64}$", digest):
                     raise RecipeError("%s.sha256 entries must be 64 hex chars" % label)
             spec["sha256"] = [d.lower() for d in digests]
+        if "critical_regions" in spec:
+            if "size" not in spec:
+                raise RecipeError(
+                    "%s.critical_regions requires an exact size validator" % label
+                )
+            critical = spec["critical_regions"]
+            critical_label = label + ".critical_regions"
+            check_keys(critical, CRITICAL_REGIONS_KEYS, critical_label)
+            regions = critical.get("regions")
+            if not isinstance(regions, list) or not regions:
+                raise RecipeError("%s.regions must be a non-empty list" % critical_label)
+            normalised = []
+            for index, region in enumerate(regions):
+                region_label = "%s.regions[%d]" % (critical_label, index)
+                check_keys(region, CRITICAL_REGION_KEYS, region_label)
+                offset = region.get("offset")
+                if isinstance(offset, str) and re.match(r"^0x[0-9a-fA-F]+$", offset):
+                    offset = int(offset, 16)
+                if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+                    raise RecipeError(
+                        "%s.offset must be a non-negative integer or 0x hex string"
+                        % region_label
+                    )
+                size = region.get("size")
+                if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+                    raise RecipeError("%s.size must be a positive integer" % region_label)
+                if offset + size > spec["size"]:
+                    raise RecipeError(
+                        "%s extends past the declared file size %d"
+                        % (region_label, spec["size"])
+                    )
+                normalised.append({"offset": offset, "size": size})
+            digest = critical.get("sha256")
+            if not isinstance(digest, str) or not re.match(
+                r"^[0-9a-fA-F]{64}$", digest
+            ):
+                raise RecipeError("%s.sha256 must be 64 hex chars" % critical_label)
+            critical["regions"] = normalised
+            critical["sha256"] = digest.lower()
         if "elf_machine" in spec:
             value = spec["elf_machine"]
             if not isinstance(value, str):
@@ -1371,14 +1473,28 @@ def matches(name, pattern):
     return fnmatch.fnmatchcase(name, pattern)
 
 
-def check_file_spec(spec, size, sha256, header, abi, label):
-    """Return None when the candidate passes, or a human reason when it does not."""
+def check_size_spec(spec, size):
     if "size" in spec and size != spec["size"]:
         return "size %d, expected %d" % (size, spec["size"])
     if "min_size" in spec and size < spec["min_size"]:
         return "size %d below min_size %d" % (size, spec["min_size"])
     if "max_size" in spec and size > spec["max_size"]:
         return "size %d above max_size %d" % (size, spec["max_size"])
+    return None
+
+
+def needs_critical_regions(spec, sha256):
+    return (
+        "critical_regions" in spec
+        and ("sha256" not in spec or sha256 not in spec["sha256"])
+    )
+
+
+def check_file_spec(spec, size, sha256, critical_sha256, header, abi, label):
+    """Return None when the candidate passes, or a human reason when it does not."""
+    size_reason = check_size_spec(spec, size)
+    if size_reason:
+        return size_reason
     if "elf_machine" in spec:
         expected = spec["elf_machine"]
         expected = abi if expected == "{abi}" else expected
@@ -1395,6 +1511,18 @@ def check_file_spec(spec, size, sha256, header, abi, label):
             return "ELF is %s-bit, expected %s-bit for %s" % (
                 bits.get(identity[1], "?"), bits.get(wanted[1], "?"), expected
             )
+    if "sha256" in spec and sha256 in spec["sha256"]:
+        return None
+    if "critical_regions" in spec:
+        expected = spec["critical_regions"]["sha256"]
+        if critical_sha256 == expected:
+            return None
+        actual = (critical_sha256 or "not-evaluated")[:12]
+        return (
+            "size ok, sha256 %s is unknown and critical_regions sha256 %s "
+            "does not match; donor differs in bytes required by this port"
+            % ((sha256 or "unavailable")[:12], actual)
+        )
     if "sha256" in spec and sha256 not in spec["sha256"]:
         return "sha256 %s not in the accepted list" % sha256[:12]
     return None
@@ -1416,7 +1544,7 @@ def build_plan(recipe, group, abi, digests, logger):
     roots = recipe.commit_roots(abi)
     items = []
     for rule in recipe.rules:
-        found, rejected = collect_rule(rule, group, abi, digests)
+        found, rejected = collect_rule(rule, group, abi, digests, logger)
         if not found:
             if rule["required"]:
                 detail = "; ".join(rejected[:3]) if rejected else "no entry matched"
@@ -1446,18 +1574,23 @@ def build_plan(recipe, group, abi, digests, logger):
     return Plan(abi, list(destinations.values()), roots)
 
 
-def collect_rule(rule, group, abi, digests):
+def collect_rule(rule, group, abi, digests, logger):
     kind = rule["kind"]
     patterns = [template(p, abi) for p in rule["patterns"]]
     spec = rule["validate"]
     rejected = []
 
-    wants_hash = "sha256" in spec
+    wants_hash = "sha256" in spec or "critical_regions" in spec
 
     if kind == "blob":
         matched = [c for c in group if any(matches(c.name, p) for p in patterns)]
         chosen = []
         for candidate in matched:
+            size = candidate.size
+            size_reason = check_size_spec(spec, size)
+            if size_reason:
+                rejected.append("%s rejected: %s" % (candidate.name, size_reason))
+                continue
             # A loose file carries no stored checksum, so hashing it costs a
             # full read. Only pay for it when the recipe asks, or when there is
             # more than one candidate and we have to tell them apart.
@@ -1465,12 +1598,23 @@ def collect_rule(rule, group, abi, digests):
                 sha256, crc, size = digests.file(candidate.path)
             else:
                 sha256, crc, size = None, None, candidate.size
+            critical_sha256 = None
+            if needs_critical_regions(spec, sha256):
+                critical_sha256 = digests.file_regions(
+                    candidate.path, spec["critical_regions"]["regions"]
+                )
             reason = check_file_spec(
-                spec, size, sha256, read_header(candidate, None), abi, candidate.name
+                spec, size, sha256, critical_sha256,
+                read_header(candidate, None), abi, candidate.name
             )
             if reason:
                 rejected.append("%s rejected: %s" % (candidate.name, reason))
                 continue
+            if critical_sha256 is not None:
+                logger.log(
+                    "accepted %s by critical regions (sha256=%s)"
+                    % (candidate.name, sha256)
+                )
             chosen.append(Item(rule["id"], template(rule["destination"], abi),
                                candidate, None, size, crc, sha256))
         return unique_one(rule, chosen, rejected)
@@ -1486,15 +1630,31 @@ def collect_rule(rule, group, abi, digests):
                         continue
                     info = candidate.archive.info(name)
                     size, crc = info.file_size, info.CRC
+                    size_reason = check_size_spec(spec, size)
+                    if size_reason:
+                        rejected.append("%s rejected: %s" % (name, size_reason))
+                        continue
                     sha256 = None
                     if wants_hash:
                         sha256, crc, size = digests.member(candidate.archive, name)
+                    critical_sha256 = None
+                    if needs_critical_regions(spec, sha256):
+                        critical_sha256 = digests.member_regions(
+                            candidate.archive, name,
+                            spec["critical_regions"]["regions"],
+                        )
                     reason = check_file_spec(
-                        spec, size, sha256, read_header(candidate, name), abi, name
+                        spec, size, sha256, critical_sha256,
+                        read_header(candidate, name), abi, name
                     )
                     if reason:
                         rejected.append("%s rejected: %s" % (name, reason))
                         continue
+                    if critical_sha256 is not None:
+                        logger.log(
+                            "accepted %s by critical regions (sha256=%s)"
+                            % (name, sha256)
+                        )
                     chosen.append(Item(rule["id"], template(rule["destination"], abi),
                                        candidate, name, size, crc, sha256))
             if chosen:
@@ -1908,7 +2068,7 @@ def digest_of(path, digests):
     return None
 
 
-def validate_checks(root, checks, abi, digests, label="validate"):
+def validate_checks(root, checks, abi, digests, label="validate", logger=None):
     """Apply a prepared list of output checks to an extracted tree."""
     for check in checks:
         relative = template(check["path"], abi)
@@ -1917,12 +2077,30 @@ def validate_checks(root, checks, abi, digests, label="validate"):
         if set(spec) & FILE_VALIDATORS:
             if not is_regular_file(path):
                 raise ValidationError("%s: missing file %s" % (label, relative))
+            size = os.path.getsize(path)
+            size_reason = check_size_spec(spec, size)
+            if size_reason:
+                raise ValidationError(
+                    "%s %s: %s" % (label, relative, size_reason)
+                )
             sha256, _crc, size = digests.file(path)
+            critical_sha256 = None
+            if needs_critical_regions(spec, sha256):
+                critical_sha256 = digests.file_regions(
+                    path, spec["critical_regions"]["regions"]
+                )
             with open(path, "rb") as stream:
                 header = stream.read(64)
-            reason = check_file_spec(spec, size, sha256, header, abi, relative)
+            reason = check_file_spec(
+                spec, size, sha256, critical_sha256, header, abi, relative
+            )
             if reason:
                 raise ValidationError("%s %s: %s" % (label, relative, reason))
+            if critical_sha256 is not None and logger is not None:
+                logger.log(
+                    "accepted %s by critical regions (sha256=%s)"
+                    % (relative, sha256)
+                )
         else:
             if not os.path.isdir(path):
                 raise ValidationError("%s: missing directory %s" % (label, relative))
@@ -1932,12 +2110,12 @@ def validate_checks(root, checks, abi, digests, label="validate"):
                 raise ValidationError("%s %s: %s" % (label, relative, reason))
 
 
-def validate_output_checks(root, recipe, abi, digests):
+def validate_output_checks(root, recipe, abi, digests, logger=None):
     """Apply the recipe's `validate` block. Needs no plan, so adoption can use it."""
-    validate_checks(root, recipe.output_checks, abi, digests)
+    validate_checks(root, recipe.output_checks, abi, digests, logger=logger)
 
 
-def identify_profile(root, recipe, abi, digests):
+def identify_profile(root, recipe, abi, digests, logger=None):
     """Return the one coherent donor profile matching *root*."""
     if not recipe.profiles:
         return None
@@ -1948,6 +2126,7 @@ def identify_profile(root, recipe, abi, digests):
             validate_checks(
                 root, profile["validate"], abi, digests,
                 label="profile %s" % profile["id"],
+                logger=logger,
             )
             matches.append(profile["id"])
         except ValidationError as error:
@@ -1990,7 +2169,7 @@ def adopt_existing(recipe, game_dir, marker_path, digests, logger, abi_override,
             for entry in roots:
                 if not os.path.exists(os.path.join(game_dir, entry["path"])):
                     raise ValidationError("%s is not installed" % entry["path"])
-            validate_output_checks(game_dir, recipe, abi, digests)
+            validate_output_checks(game_dir, recipe, abi, digests, logger)
         except ValidationError as error:
             logger.log("cannot adopt for %s: %s" % (abi, error))
             continue
@@ -2010,7 +2189,7 @@ def adopt_existing(recipe, game_dir, marker_path, digests, logger, abi_override,
                 items.append(Item("adopted", entry["path"], None, None,
                                   os.path.getsize(base), None))
         plan = Plan(abi, items, roots)
-        plan.profile = identify_profile(game_dir, recipe, abi, digests)
+        plan.profile = identify_profile(game_dir, recipe, abi, digests, logger)
         marker = write_marker(marker_path, recipe, plan, uuid.uuid4().hex,
                               durability, adopted=True)
         logger.log("adopted %d already-installed file(s) for abi %s"
@@ -2019,7 +2198,7 @@ def adopt_existing(recipe, game_dir, marker_path, digests, logger, abi_override,
     return None
 
 
-def validate_tree(root, recipe, plan, digests, full=True):
+def validate_tree(root, recipe, plan, digests, full=True, logger=None):
     """Validate an installed or staged tree against the recipe."""
     for item in plan.items:
         path = os.path.join(root, item.destination)
@@ -2036,7 +2215,7 @@ def validate_tree(root, recipe, plan, digests, full=True):
                 raise ValidationError("%s: content hash mismatch" % item.destination)
             if item.crc is not None and crc != item.crc:
                 raise ValidationError("%s: checksum mismatch" % item.destination)
-    validate_output_checks(root, recipe, plan.abi, digests)
+    validate_output_checks(root, recipe, plan.abi, digests, logger)
     for root_entry in plan.roots:
         if not os.path.exists(os.path.join(root, root_entry["path"])):
             raise ValidationError("commit root is missing: %s" % root_entry["path"])
@@ -2261,7 +2440,7 @@ def commit(recipe, plan, game_dir, workspace, marker_path, digests, progress,
         # moment ago and publishing is a rename of those same inodes, so the
         # content cannot have changed; re-hashing would prove nothing and costs
         # a whole extra pass over the payload on a slow card.
-        validate_tree(game_dir, recipe, plan, digests, full=False)
+        validate_tree(game_dir, recipe, plan, digests, full=False, logger=logger)
 
         # Everything the marker certifies must be durable BEFORE the marker is.
         durability.sync_parents(game_dir, [r["path"] for r in transaction.data["paths"]])
@@ -2573,8 +2752,10 @@ def install_command(args):
                 digests.invalidate(stage)
 
             progress.update(overall=850, message="VALIDATING GAME DATA", force=True)
-            validate_tree(stage, recipe, plan, digests, full=True)
-            plan.profile = identify_profile(stage, recipe, plan.abi, digests)
+            validate_tree(stage, recipe, plan, digests, full=True, logger=logger)
+            plan.profile = identify_profile(
+                stage, recipe, plan.abi, digests, logger=logger
+            )
             if plan.profile:
                 logger.log("donor profile=%s" % plan.profile)
             commit(recipe, plan, game_dir, workspace, marker_path, digests,
@@ -2678,7 +2859,9 @@ def verify_command(args):
                 raise ValidationError("modified: %s" % item["destination"])
             if item.get("sha256") and sha256 != item["sha256"]:
                 raise ValidationError("modified: %s" % item["destination"])
-        profile = identify_profile(game_dir, recipe, marker.get("abi"), digests)
+        profile = identify_profile(
+            game_dir, recipe, marker.get("abi"), digests, logger=logger
+        )
         if recipe.profiles and profile != marker.get("donor_profile"):
             raise ValidationError(
                 "donor profile changed: marker=%s current=%s"

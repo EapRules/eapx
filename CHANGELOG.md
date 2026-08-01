@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- Add generic `critical_regions` validation for compatible donor variants.
+- Keep known full-file SHA-256 values as the fast path and fall back to the
+  SHA-256 of recipe-ordered byte ranges only for unknown full hashes.
+- Require an exact file size and validate hexadecimal/decimal offsets, positive
+  region sizes, bounds, and digests while loading the recipe.
+- Log the actual full SHA-256 whenever critical regions accept a donor.
+- Preserve the exact validation behavior of recipes without the new field.
+
 ## 0.2.0
 
 - Add optional coherent donor profiles and persist the selected profile.

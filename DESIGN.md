@@ -254,7 +254,7 @@ y `assets/**`, verificá el arch, instalá"*.
   "schema": 1,
   "id": "port-id",
   "version": "1",
-  "requires_eapx": ">=0.2.0",
+  "requires_eapx": ">=0.3.0",
   "title": "TÍTULO",
   "abi_order": ["arm64-v8a", "armeabi-v7a"],
 
@@ -264,7 +264,15 @@ y `assets/**`, verificá el arch, instalá"*.
       "description": "la librería nativa del juego",
       "destination": "lib/{abi}/libgame.so",
       "source": { "kind": "entry", "patterns": ["lib/{abi}/libgame.so"] },
-      "validate": { "elf_machine": "{abi}", "min_size": 1 }
+      "validate": {
+        "size": 4096,
+        "sha256": "...",
+        "critical_regions": {
+          "regions": [{ "offset": "0x100", "size": 16 }],
+          "sha256": "..."
+        },
+        "elf_machine": "{abi}"
+      }
     },
     {
       "id": "game-assets",
@@ -305,7 +313,18 @@ y `assets/**`, verificá el arch, instalá"*.
 - `marker` y `log` no pueden vivir bajo una raíz de commit. Si lo hacen, se destruyen en
   cada reinstalación y el fast-path deja de funcionar para siempre, en silencio.
 
-### 7.2 Digest
+### 7.2 Regiones críticas
+
+Una validación de archivo puede declarar `critical_regions` junto con un `size`
+exacto. El tamaño se comprueba antes de leer contenido. Un `sha256` completo conocido
+es el fast-path; si es desconocido, el motor concatena en orden los rangos declarados y
+compara su SHA-256. Los offsets pueden ser enteros decimales o strings hexadecimales.
+
+El motor no interpreta esos bytes ni conoce por qué son importantes. Elegir los rangos
+que cubren offsets fijos, parches o datos estructurales es responsabilidad del port.
+Recetas sin este campo conservan exactamente el comportamiento previo.
+
+### 7.3 Digest
 
 Dos digests separados:
 
@@ -316,7 +335,7 @@ Dos digests separados:
 En el original el digest cubría el título y los segundos de UI, así que corregir un typo
 en un texto forzaba la reextracción completa de 2 GB.
 
-### 7.3 Patterns
+### 7.4 Patterns
 
 `fnmatch` sobre el nombre completo de la entrada, donde `*` cruza `/`. Se documenta
 así explícitamente: el original lo llamaba "glob" en la doc, lo que hace pensar que

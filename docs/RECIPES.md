@@ -50,13 +50,47 @@ identity; content and rule checks decide whether a donor matches.
 
 ## Validation
 
-File checks: `size`, `min_size`, `max_size`, `sha256`, `elf_machine`.
+File checks: `size`, `min_size`, `max_size`, `sha256`, `critical_regions`,
+`elf_machine`.
 
 Tree checks: `min_files`, `max_files`, `min_bytes`, `max_bytes`.
 
 `sha256` accepts one digest or a list. A list means any listed value is valid
 for that individual check. Use `profiles` when values across several files
 must correlate.
+
+### Critical regions
+
+`critical_regions` accepts compatible variants of the same file without
+enumerating every full-file hash:
+
+```json
+{
+  "size": 4096,
+  "sha256": ["<known-full-file-sha256>"],
+  "critical_regions": {
+    "regions": [
+      {"offset": "0x100", "size": 16},
+      {"offset": 1024, "size": 32}
+    ],
+    "sha256": "<sha256-of-the-concatenated-region-bytes>"
+  }
+}
+```
+
+The exact `size` check is mandatory. eapx rejects a wrong size before hashing
+the file. It then accepts a known full-file `sha256` without reading the
+regions. For an unknown full hash, it reads each range, concatenates the bytes
+in declaration order, and compares that digest with `critical_regions.sha256`.
+
+Offsets are non-negative decimal integers or strings in `0x` hexadecimal
+notation. Region sizes are positive byte counts, and every range must fit
+inside the declared file size. When fallback succeeds, the log records both
+that critical regions accepted the file and its actual complete SHA-256.
+
+The field is optional. Without it, full-file SHA-256 validation behaves exactly
+as it did before 0.3.0. Selecting the ranges is the port's responsibility; the
+engine attaches no meaning to their contents.
 
 ## Profiles
 

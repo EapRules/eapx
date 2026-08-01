@@ -43,4 +43,4 @@ jobs:
             echo 'game-specific name found in eapx.py' >&2
             exit 1
           fi
-      - run: test "$(python eapx.py --version)" = "0.2.0"
+      - run: test "$(python eapx.py --version)" = "0.3.0"

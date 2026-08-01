@@ -99,11 +99,15 @@
         "min_size": {"type": "integer", "minimum": 0},
         "max_size": {"type": "integer", "minimum": 0},
         "sha256": {"$ref": "#/$defs/sha256"},
+        "critical_regions": {"$ref": "#/$defs/criticalRegions"},
         "elf_machine": {"type": "string", "minLength": 1},
         "min_files": {"type": "integer", "minimum": 0},
         "max_files": {"type": "integer", "minimum": 0},
         "min_bytes": {"type": "integer", "minimum": 0},
         "max_bytes": {"type": "integer", "minimum": 0}
+      },
+      "dependentRequired": {
+        "critical_regions": ["size"]
       }
     },
     "outputCheck": {
@@ -116,6 +120,7 @@
           "properties": {
             "path": {"type": "string", "minLength": 1},
             "size": {}, "min_size": {}, "max_size": {}, "sha256": {},
+            "critical_regions": {},
             "elf_machine": {}, "min_files": {}, "max_files": {},
             "min_bytes": {}, "max_bytes": {}
           }
@@ -183,6 +188,35 @@
           "type": "array",
           "minItems": 1,
           "items": {"$ref": "#/$defs/outputCheck"}
+        }
+      }
+    },
+    "criticalRegions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regions", "sha256"],
+      "properties": {
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["offset", "size"],
+            "properties": {
+              "offset": {
+                "oneOf": [
+                  {"type": "integer", "minimum": 0},
+                  {"type": "string", "pattern": "^0x[0-9a-fA-F]+$"}
+                ]
+              },
+              "size": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
         }
       }
     }

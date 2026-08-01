@@ -3,8 +3,8 @@
 The distribution contract is an exact offline copy:
 
 ```text
-EAPX_VERSION=0.2.0
-EAPX_SHA256=<published SHA256 for eapx.py>
+EAPX_VERSION=0.3.0
+EAPX_SHA256=2b029be88b23c30aba14e25c6379f67af09f6c73f4f816e163c78d60eaaee33e
 ```
 
 For a port release:
@@ -24,4 +24,10 @@ that needs profiles or another 0.2 feature should declare:
 
 ```json
 "requires_eapx": ">=0.2.0"
+```
+
+Recipes that declare `critical_regions` require the newer engine:
+
+```json
+"requires_eapx": ">=0.3.0"
 ```

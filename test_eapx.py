@@ -698,7 +698,8 @@ class AdoptionTests(Base):
         self.install_then_lose_the_marker()
         self.assertEqual(self.install(), 0, "should adopt instead of demanding the APK")
         self.assert_installed()
-        marker = json.load(open(os.path.join(self.game, ".eapx-test-port.json")))
+        with open(os.path.join(self.game, ".eapx-test-port.json")) as stream:
+            marker = json.load(stream)
         self.assertTrue(marker["adopted"])
         self.assertEqual(len(marker["items"]), 3)
 
@@ -846,6 +847,209 @@ class ProfileTests(Base):
         with open(self.marker_path()) as stream:
             upgraded = json.load(stream)
         self.assertEqual(upgraded["donor_profile"], "alpha")
+
+
+class CriticalRegionTests(Base):
+    def regions(self):
+        # Deliberately not sorted by offset: concatenation follows recipe order.
+        return [
+            {"offset": 64, "size": 8},
+            {"offset": "0x0", "size": 20},
+        ]
+
+    def region_digest(self, payload, regions=None):
+        digest = hashlib.sha256()
+        for region in regions or self.regions():
+            offset = region["offset"]
+            if isinstance(offset, str):
+                offset = int(offset, 16)
+            digest.update(payload[offset:offset + region["size"]])
+        return digest.hexdigest()
+
+    def critical_recipe(self, known_payload=ARM64_SO, region_payload=ARM64_SO,
+                        include_full_hash=True):
+        recipe = self.recipe(requires_eapx=">=0.3.0")
+        validation = {
+            "size": len(known_payload),
+            "elf_machine": "{abi}",
+            "critical_regions": {
+                "regions": self.regions(),
+                "sha256": self.region_digest(region_payload),
+            },
+        }
+        if include_full_hash:
+            validation["sha256"] = hashlib.sha256(known_payload).hexdigest()
+        recipe["extract"][0]["validate"] = validation
+        recipe["validate"] = [{
+            "path": "lib/{abi}/libgame.so",
+            **validation
+        }]
+        return recipe
+
+    def entries_with_library(self, payload):
+        entries = self.apk_entries()
+        entries["lib/arm64-v8a/libgame.so"] = payload
+        return entries
+
+    def test_known_full_hash_accepts_without_region_fallback(self):
+        recipe = self.critical_recipe(region_payload=b"x" * len(ARM64_SO))
+        self.write_recipe(recipe)
+        make_zip(os.path.join(self.data, "known.apk"), self.apk_entries())
+        self.assertEqual(self.install(), 0)
+        with open(os.path.join(self.game, "eapx.log")) as stream:
+            self.assertNotIn("accepted by critical regions", stream.read())
+
+    def test_unknown_full_hash_with_matching_regions_is_accepted(self):
+        variant = bytearray(ARM64_SO)
+        variant[-1] ^= 0x01
+        variant = bytes(variant)
+        self.write_recipe(self.critical_recipe())
+        make_zip(os.path.join(self.data, "variant.apk"),
+                 self.entries_with_library(variant))
+        self.assertEqual(self.install(), 0)
+        with open(os.path.join(self.game, "eapx.log")) as stream:
+            log = stream.read()
+        self.assertIn("accepted lib/arm64-v8a/libgame.so by critical regions", log)
+        self.assertIn(hashlib.sha256(variant).hexdigest(), log)
+        with open(os.path.join(self.game, ".eapx-test-port.json")) as stream:
+            marker = json.load(stream)
+        native = next(item for item in marker["items"]
+                      if item["rule"] == "native-library")
+        self.assertEqual(native["sha256"], hashlib.sha256(variant).hexdigest())
+
+    def test_output_check_alone_logs_region_fallback(self):
+        variant = bytearray(ARM64_SO)
+        variant[-1] ^= 0x01
+        variant = bytes(variant)
+        recipe = self.critical_recipe()
+        recipe["extract"][0]["validate"] = {
+            "size": len(ARM64_SO),
+            "elf_machine": "{abi}",
+        }
+        self.write_recipe(recipe)
+        make_zip(os.path.join(self.data, "variant.apk"),
+                 self.entries_with_library(variant))
+        self.assertEqual(self.install(), 0)
+        with open(os.path.join(self.game, "eapx.log")) as stream:
+            log = stream.read()
+        self.assertIn("accepted lib/arm64-v8a/libgame.so by critical regions", log)
+        self.assertIn(hashlib.sha256(variant).hexdigest(), log)
+
+    def test_critical_regions_work_without_a_full_hash_allowlist(self):
+        variant = bytearray(ARM64_SO)
+        variant[-1] ^= 0x01
+        self.write_recipe(self.critical_recipe(include_full_hash=False))
+        make_zip(os.path.join(self.data, "variant.apk"),
+                 self.entries_with_library(bytes(variant)))
+        self.assertEqual(self.install(), 0)
+
+    def test_unknown_donor_with_changed_critical_region_is_rejected(self):
+        variant = bytearray(ARM64_SO)
+        variant[65] ^= 0x01
+        self.write_recipe(self.critical_recipe())
+        make_zip(os.path.join(self.data, "incompatible.apk"),
+                 self.entries_with_library(bytes(variant)))
+        self.assertEqual(self.install(), 1)
+        self.assertFalse(os.path.exists(
+            os.path.join(self.game, ".eapx-test-port.json")
+        ))
+
+    def test_blob_source_uses_the_same_region_fallback(self):
+        known = b"critical" + b"A" * 32
+        variant = b"critical" + b"B" * 32
+        regions = [{"offset": 0, "size": 8}]
+        recipe = {
+            "schema": 1,
+            "id": "critical-blob",
+            "version": "1",
+            "requires_eapx": ">=0.3.0",
+            "extract": [{
+                "id": "blob",
+                "destination": "payload.bin",
+                "source": {"kind": "blob", "patterns": ["donor.bin"]},
+                "validate": {
+                    "size": len(known),
+                    "sha256": hashlib.sha256(known).hexdigest(),
+                    "critical_regions": {
+                        "regions": regions,
+                        "sha256": self.region_digest(variant, regions),
+                    },
+                },
+            }],
+            "commit": ["payload.bin"],
+        }
+        self.write_recipe(recipe)
+        with open(os.path.join(self.data, "donor.bin"), "wb") as stream:
+            stream.write(variant)
+        self.assertEqual(self.install(), 0)
+        with open(os.path.join(self.game, "payload.bin"), "rb") as stream:
+            self.assertEqual(stream.read(), variant)
+
+    def test_wrong_size_is_rejected_before_content_hashing(self):
+        from unittest import mock
+        recipe = self.critical_recipe()
+        validation = recipe["extract"][0]["validate"]
+        validation["size"] += 1
+        self.write_recipe(recipe)
+        make_zip(os.path.join(self.data, "wrong-size.apk"), self.apk_entries())
+        with mock.patch.object(
+            eapx.DigestCache, "member",
+            side_effect=AssertionError("content was hashed before size rejection"),
+        ):
+            self.assertEqual(self.install(), 1)
+
+    def test_recipe_without_regions_keeps_full_hash_behavior(self):
+        variant = bytearray(ARM64_SO)
+        variant[-1] ^= 0x01
+        recipe = self.recipe()
+        recipe["extract"][0]["validate"]["sha256"] = hashlib.sha256(
+            ARM64_SO
+        ).hexdigest()
+        self.write_recipe(recipe)
+        make_zip(os.path.join(self.data, "variant.apk"),
+                 self.entries_with_library(bytes(variant)))
+        self.assertEqual(self.install(), 1)
+
+    def test_regions_are_normalised_and_bounded_at_recipe_load(self):
+        self.write_recipe(self.critical_recipe())
+        parsed = eapx.Recipe(self.recipe_path)
+        regions = parsed.rules[0]["validate"]["critical_regions"]["regions"]
+        self.assertEqual(regions[1]["offset"], 0)
+
+        recipe = self.critical_recipe()
+        recipe["extract"][0]["validate"]["critical_regions"]["regions"] = [
+            {"offset": len(ARM64_SO) - 1, "size": 2}
+        ]
+        self.write_recipe(recipe)
+        with self.assertRaises(eapx.RecipeError) as caught:
+            eapx.Recipe(self.recipe_path)
+        self.assertIn("extends past", str(caught.exception))
+
+    def test_critical_regions_require_exact_size(self):
+        recipe = self.critical_recipe()
+        del recipe["extract"][0]["validate"]["size"]
+        self.write_recipe(recipe)
+        with self.assertRaises(eapx.RecipeError) as caught:
+            eapx.Recipe(self.recipe_path)
+        self.assertIn("requires an exact size", str(caught.exception))
+
+    def test_invalid_region_values_are_recipe_errors(self):
+        cases = [
+            ({"offset": True, "size": 1}, "offset"),
+            ({"offset": "100", "size": 1}, "offset"),
+            ({"offset": "0X10", "size": 1}, "offset"),
+            ({"offset": 0, "size": 0}, "positive"),
+            ({"offset": 0, "size": True}, "positive"),
+        ]
+        for region, message in cases:
+            recipe = self.critical_recipe()
+            recipe["extract"][0]["validate"]["critical_regions"]["regions"] = [
+                region
+            ]
+            self.write_recipe(recipe)
+            with self.assertRaises(eapx.RecipeError, msg=repr(region)) as caught:
+                eapx.Recipe(self.recipe_path)
+            self.assertIn(message, str(caught.exception))
 
 
 class VersionRequirementTests(Base):

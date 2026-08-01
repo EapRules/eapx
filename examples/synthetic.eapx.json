@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "synthetic-port",
   "version": "1",
-  "requires_eapx": ">=0.2.0",
+  "requires_eapx": ">=0.3.0",
   "title": "Synthetic Example",
   "abi_order": [
     "arm64-v8a",
@@ -26,7 +26,15 @@
         ]
       },
       "validate": {
-        "min_size": 64,
+        "size": 4096,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "critical_regions": {
+          "regions": [
+            {"offset": "0x0", "size": 64},
+            {"offset": 1024, "size": 32}
+          ],
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
         "elf_machine": "{abi}"
       }
     },

@@ -27,11 +27,15 @@ be disabled with `--no-portmaster`.
 ## Recipes
 
 Recipes use schema version `1`, independently from the engine version and the
-recipe's own version. Version 0.2.0 adds two optional fields:
+recipe's own version. Version 0.2.0 added two optional fields:
 
 - `requires_eapx`, currently restricted to `>=MAJOR.MINOR.PATCH`.
 - `profiles`, coherent groups of output checks used to classify a donor and
   reject unknown, mixed, or ambiguous payloads.
+
+Version 0.3.0 adds optional `critical_regions` validation for single files.
+A known full-file SHA-256 remains the fast path; an unknown full hash may fall
+back to a recipe-declared digest of the exact byte ranges a port depends on.
 
 Recipes without these fields retain the 0.1.0 behavior. See
 [`docs/RECIPES.md`](docs/RECIPES.md), the
@@ -44,8 +48,8 @@ Ports should vendor an exact copy; runtime downloads, pip, and submodules are
 not part of the contract:
 
 ```text
-EAPX_VERSION=0.2.0
-EAPX_SHA256=<hash from the v0.2.0 release SHA256SUMS>
+EAPX_VERSION=0.3.0
+EAPX_SHA256=2b029be88b23c30aba14e25c6379f67af09f6c73f4f816e163c78d60eaaee33e
 ```
 
 Details are in [`docs/CONSUMING.md`](docs/CONSUMING.md). Architectural and
