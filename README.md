@@ -42,6 +42,12 @@ Recipes without these fields retain the 0.1.0 behavior. See
 [`recipe.schema.json`](recipe.schema.json), and the synthetic
 [`examples/synthetic.eapx.json`](examples/synthetic.eapx.json).
 
+Donors may be composed from more than one input, such as a primary APK plus a
+separately copied Android data directory. Input roots, grouping, repeated
+`--input`, directory traversal, and per-rule validation are documented in
+[`docs/DONORS.md`](docs/DONORS.md). Recipe authors should read that guide
+before adding layouts for multi-source backups.
+
 ## Offline consumption by ports
 
 Ports should vendor an exact copy; runtime downloads, pip, and submodules are

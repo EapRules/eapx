@@ -27,10 +27,10 @@ jobs:
         run: |
           mkdir -p dist
           cp eapx.py recipe.schema.json README.md DESIGN.md CHANGELOG.md LICENSE dist/
-          cp docs/RECIPES.md docs/CONSUMING.md docs/PORTMASTER.md dist/
+          cp docs/RECIPES.md docs/DONORS.md docs/CONSUMING.md docs/PORTMASTER.md dist/
           cp examples/synthetic.eapx.json dist/
           (cd dist && sha256sum eapx.py recipe.schema.json README.md DESIGN.md \
-            CHANGELOG.md LICENSE RECIPES.md CONSUMING.md PORTMASTER.md \
+            CHANGELOG.md LICENSE RECIPES.md DONORS.md CONSUMING.md PORTMASTER.md \
             synthetic.eapx.json > SHA256SUMS)
       - name: Publish GitHub release
         env:

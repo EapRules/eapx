@@ -48,6 +48,21 @@ Each rule has `id`, `destination`, `source`, optional `description`, optional
 Patterns use shell-style matching. Input filenames are logging metadata, not
 identity; content and rule checks decide whether a donor matches.
 
+Every pattern is relative to the root of one candidate. An APK or ZIP exposes
+its archive member names; an input directory exposes paths relative to that
+exact directory. eapx can combine entries from several candidates, but it does
+not recursively discover an APK stored inside an input directory.
+
+Tree validators on an extraction rule apply to that rule's collected entries
+before results from different rules are merged. `required: false` means that
+zero matches are allowed. It does not make a non-empty result exempt from the
+rule's validators. When several partial rules build one output tree, validate
+each source only as strongly as it can stand alone and put completeness checks
+in the top-level `validate` block.
+
+See [`DONORS.md`](DONORS.md) for complete multi-source layouts, command-line
+examples, and common failure modes.
+
 ## Validation
 
 File checks: `size`, `min_size`, `max_size`, `sha256`, `critical_regions`,
