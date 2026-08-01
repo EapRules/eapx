@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Brand the optional TTY progress screen as EAPX, “Android Port eXtractor”,
+  with a `BY EAPRULES` footer.
+- Keep logs and the PortMaster patcher protocol unchanged, and fall back to an
+  ASCII-only presentation when the terminal cannot encode the block artwork.
+
 ## 0.3.0
 
 - Add generic `critical_regions` validation for compatible donor variants.
