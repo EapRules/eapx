@@ -4,6 +4,12 @@ PortMaster support is optional and autodetected. eapx can update a TTY progress
 view, speak the patcher protocol when the corresponding environment is present,
 and remove a recipe-declared placeholder only after a successful commit.
 
+The full-screen TTY view identifies the tool as **EAPX — Android Port
+eXtractor**, shows `recipe.title` as the game being imported, and carries a
+`BY EAPRULES` footer. The artwork is presentation only: it is not written to
+the log or sent through the patcher protocol. Terminals without compatible
+Unicode encoding receive an ASCII-only fallback.
+
 Useful install flags:
 
 - `--tty none`: disable TTY progress explicitly.

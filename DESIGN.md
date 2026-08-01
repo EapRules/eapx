@@ -403,6 +403,11 @@ mostrando la fase anterior.
 
 **La UI es estrictamente no-fatal** y **el motor nunca depende de ella.**
 
+La pantalla TTY lleva identidad visual propia: `EAPX`, el subtítulo `Android Port
+eXtractor`, el título de la receta y la firma `BY EAPRULES`. El arte Unicode se
+degrada a texto ASCII si el encoding de la consola no lo admite. Nada de esta
+presentación entra al log ni altera el protocolo del patcher.
+
 ### 9.0 Tres canales, en orden de preferencia
 
 Resuelto investigando el runtime real de PortMaster, no diseñando a ciegas.

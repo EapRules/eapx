@@ -740,6 +740,57 @@ class PortMasterTests(Base):
         os.environ.update(self._saved)
         Base.tearDown(self)
 
+    def test_tty_progress_uses_the_eapx_brand(self):
+        import io
+        self.assertEqual(eapx.EAPX_LOGO, (
+            "▄▖▄▖▄▖▖▖",
+            "▙▖▌▌▙▌▚▘",
+            "▙▖▛▌▌ ▌▌",
+        ))
+        screen = io.StringIO()
+        progress = eapx.Progress(
+            None, eapx.Logger(None, verbose=False), title="Synthetic Game",
+            tty="none", portmaster=None,
+        )
+        progress.tty = screen
+        progress.update(
+            overall=560, message="EXTRACTING GAME DATA",
+            detail="chapter.dat", force=True,
+        )
+        lines = [line.strip() for line in screen.getvalue().splitlines()]
+        for line in eapx.EAPX_LOGO + eapx.EAPRULES_SIGNATURE:
+            self.assertIn(line, lines)
+        self.assertIn("Android Port eXtractor", lines)
+        self.assertIn("IMPORTING", lines)
+        self.assertIn("Synthetic Game", lines)
+
+    def test_tty_progress_has_an_ascii_fallback(self):
+        class AsciiScreen:
+            encoding = "ascii"
+
+            def __init__(self):
+                self.value = ""
+
+            def fileno(self):
+                raise OSError("not a real tty")
+
+            def write(self, value):
+                self.value += value
+
+            def flush(self):
+                pass
+
+        screen = AsciiScreen()
+        progress = eapx.Progress(
+            None, eapx.Logger(None, verbose=False), title="Synthetic Game",
+            tty="none", portmaster=None,
+        )
+        progress.tty = screen
+        progress.update(overall=560, message="EXTRACTING", force=True)
+        self.assertIn("EAPX", screen.value)
+        self.assertIn("BY EAPRULES", screen.value)
+        self.assertTrue(all(ord(character) < 128 for character in screen.value))
+
     def test_placeholder_is_removed_once_the_game_is_in(self):
         recipe = self.recipe()
         recipe["placeholder"] = "gamedata/place NeededFiles here"

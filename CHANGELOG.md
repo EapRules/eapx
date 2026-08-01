@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Brand the optional TTY progress screen as EAPX, “Android Port eXtractor”,
+  with a `BY EAPRULES` footer.
+- Keep logs and the PortMaster patcher protocol unchanged, and fall back to an
+  ASCII-only presentation when the terminal cannot encode the block artwork.
 - Document candidate roots, repeated explicit inputs, immediate-child
   discovery, APK/data-directory composition, and raw Android backup layouts.
 - Clarify that optional extraction rules still validate non-empty partial

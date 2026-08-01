@@ -32,6 +32,18 @@ DEFAULT_SAFETY_BYTES = 128 << 20
 DEFAULT_HOOK_TIMEOUT = 600
 MAX_MESSAGE_BYTES = 200
 
+EAPX_LOGO = (
+    "▄▖▄▖▄▖▖▖",
+    "▙▖▌▌▙▌▚▘",
+    "▙▖▛▌▌ ▌▌",
+)
+EAPRULES_SIGNATURE = (
+    "░█▀▄░█░█░░░█▀▀░█▀█░█▀█░█▀▄░█░█░█░░░█▀▀░█▀▀",
+    "░█▀▄░░█░░░░█▀▀░█▀█░█▀▀░█▀▄░█░█░█░░░█▀▀░▀▀█",
+    "░▀▀░░░▀░░░░▀▀▀░▀░▀░▀░░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀▀▀",
+)
+EAPX_SUBTITLE = "Android Port eXtractor"
+
 # ELF e_machine values, paired with the expected EI_CLASS. The class check is
 # what stops an ARMv5 32-bit object from validating as arm64.
 ELF_ABIS = {
@@ -550,9 +562,28 @@ class Progress:
     def _render(self, state, overall, message, detail):
         if self.tty is None:
             return
-        width = 34
+        try:
+            geometry = os.get_terminal_size(self.tty.fileno())
+            columns, rows = geometry.columns, geometry.lines
+        except (AttributeError, OSError, ValueError):
+            columns, rows = 80, 24
+        columns = max(20, columns)
+        rows = max(12, rows)
+
+        encoding = getattr(self.tty, "encoding", None) or "utf-8"
+        branded = columns >= max(len(line) for line in EAPRULES_SIGNATURE)
+        if branded:
+            try:
+                "".join(EAPX_LOGO + EAPRULES_SIGNATURE).encode(encoding)
+            except (LookupError, UnicodeError):
+                branded = False
+
+        logo = EAPX_LOGO if branded else ("EAPX",)
+        signature = EAPRULES_SIGNATURE if branded else ("BY EAPRULES",)
+        width = min(34, max(8, columns - 12))
         filled = max(0, min(width, overall * width // 1000))
-        bar = "#" * filled + "-" * (width - filled)
+        full, empty = ("█", "░") if branded else ("#", "-")
+        bar = full * filled + empty * (width - filled)
         eta = ""
         if state == 1 and self.done_bytes and self.total_bytes:
             elapsed = time.time() - self.started
@@ -562,14 +593,45 @@ class Progress:
                 eta = "  %d:%02d left  %.1f MB/s" % (
                     left // 60, left % 60, rate / 1048576.0
                 )
-        heading = {1: message, 2: "SETUP FAILED", 3: "READY"}.get(state, message)
+        heading = {1: "IMPORTING", 2: "SETUP FAILED", 3: "READY"}.get(
+            state, "IMPORTING"
+        )
+
+        def centred(value):
+            value = str(value).strip()
+            if len(value) > columns:
+                value = value[:max(1, columns - 3)] + (
+                    "…" if branded else "..."
+                )
+            return value.center(columns)
+
+        body = [""]
+        body.extend(centred(line) for line in logo)
+        body.extend([
+            "",
+            centred(EAPX_SUBTITLE),
+            "",
+            centred(heading),
+            centred(self.title),
+            "",
+            centred("[%s] %3d%%" % (bar, overall // 10)),
+            "",
+            centred(message),
+        ])
+        if detail:
+            body.append(centred(detail))
+        if eta:
+            body.append(centred(eta))
+
+        separator_glyph = "─" if branded else "-"
+        separator_width = min(columns, max(len(line) for line in signature))
+        footer = [centred(separator_glyph * separator_width)]
+        footer.extend(centred(line) for line in signature)
+        padding = [""] * max(1, rows - len(body) - len(footer))
         try:
-            self.tty.write(
-                "\033[H\033[2J\n\n   %s\n\n   %s\n\n   [%s] %3d%%\n\n   %s\n   %s\n"
-                % (self.title, heading, bar, overall // 10, detail, eta)
-            )
+            self.tty.write("\033[H\033[2J" + "\n".join(body + padding + footer) + "\n")
             self.tty.flush()
-        except OSError:
+        except (OSError, UnicodeError):
             self.tty = None
 
     def update(self, state=1, overall=0, message="", detail="", force=False):
