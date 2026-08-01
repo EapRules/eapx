@@ -356,6 +356,122 @@ class DirectorySourceTests(Base):
         self.assertEqual(self.install(), 0)
 
 
+class DonorCompositionTests(Base):
+    """Candidate roots and validation order for APK plus external data."""
+
+    def write_tree_file(self, root, relative, data=b"external data"):
+        path = os.path.join(root, *relative.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as stream:
+            stream.write(data)
+        return path
+
+    def test_immediate_sibling_directory_augments_an_apk_rule(self):
+        recipe = self.recipe()
+        recipe["extract"][1]["validate"]["min_files"] = 3
+        recipe["validate"] = [{"path": "assets", "min_files": 3}]
+        self.write_recipe(recipe)
+        make_zip(os.path.join(self.data, "base.apk"), self.apk_entries())
+        self.write_tree_file(
+            os.path.join(self.data, "external-data"),
+            "assets/published/chapter.dat",
+        )
+
+        self.assertEqual(self.install(), 0)
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.game, "assets/published/chapter.dat")
+        ))
+
+    def test_repeated_explicit_inputs_form_the_same_donor_group(self):
+        recipe = self.recipe()
+        recipe["extract"][1]["validate"]["min_files"] = 3
+        self.write_recipe(recipe)
+        apk = os.path.join(self.root, "phone-backup", "base.apk")
+        external = os.path.join(self.root, "phone-data")
+        make_zip(apk, self.apk_entries())
+        self.write_tree_file(external, "assets/published/chapter.dat")
+
+        self.assertEqual(
+            self.install("--input", apk, "--input", external), 0
+        )
+        self.assert_installed()
+
+    def test_discovery_does_not_open_an_apk_nested_in_a_directory(self):
+        self.write_recipe()
+        wrapper = os.path.join(self.data, "phone-backup")
+        make_zip(os.path.join(wrapper, "base.apk"), self.apk_entries())
+
+        self.assertEqual(
+            self.install(), 1,
+            "a nested APK must not become a recursive candidate",
+        )
+
+    def test_optional_rule_still_rejects_a_nonempty_partial_match(self):
+        recipe = self.recipe()
+        assets = recipe["extract"][1]
+        assets["required"] = False
+        assets["validate"]["min_files"] = 3
+        self.write_recipe(recipe)
+        make_zip(os.path.join(self.data, "base.apk"), self.apk_entries())
+
+        self.assertEqual(self.install(), 1)
+        with open(os.path.join(self.game, "eapx.log")) as stream:
+            log = stream.read()
+        self.assertIn("game-assets: 2 file(s), expected at least 3", log)
+
+    def test_top_level_validation_checks_a_tree_assembled_by_two_rules(self):
+        recipe = self.recipe(
+            extract=[
+                {
+                    "id": "native-library",
+                    "destination": "lib/{abi}/libgame.so",
+                    "source": {
+                        "kind": "entry",
+                        "patterns": ["lib/{abi}/libgame.so"],
+                    },
+                    "validate": {"elf_machine": "{abi}", "min_size": 1},
+                },
+                {
+                    "id": "base-assets",
+                    "required": False,
+                    "destination": "assets",
+                    "source": {
+                        "kind": "entries",
+                        "patterns": ["assets/base/*"],
+                        "strip_prefix": "assets/base/",
+                    },
+                },
+                {
+                    "id": "external-assets",
+                    "required": False,
+                    "destination": "assets",
+                    "source": {
+                        "kind": "entries",
+                        "patterns": ["published/*"],
+                        "strip_prefix": "published/",
+                    },
+                },
+            ],
+            validate=[{"path": "assets", "min_files": 2}],
+        )
+        self.write_recipe(recipe)
+        entries = {
+            "AndroidManifest.xml": b"<manifest/>",
+            "lib/arm64-v8a/libgame.so": ARM64_SO,
+            "assets/base/level.dat": b"level data",
+        }
+        make_zip(os.path.join(self.data, "base.apk"), entries)
+        self.write_tree_file(
+            os.path.join(self.data, "external-data"),
+            "published/texture.bin",
+            b"texture data",
+        )
+
+        self.assertEqual(self.install(), 0)
+        self.assertTrue(os.path.isfile(os.path.join(self.game, "assets/level.dat")))
+        self.assertTrue(os.path.isfile(os.path.join(self.game, "assets/texture.bin")))
+
+
 class ForeignFileTests(Base):
     def test_foreign_file_under_a_commit_root_blocks_the_install(self):
         self.write_recipe()
