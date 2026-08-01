@@ -25,7 +25,7 @@ import time
 import uuid
 import zipfile
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 FORMAT_VERSION = 1
 CHUNK_SIZE = 1 << 20
 DEFAULT_SAFETY_BYTES = 128 << 20
@@ -38,9 +38,9 @@ EAPX_LOGO = (
     "▙▖▛▌▌ ▌▌",
 )
 EAPRULES_SIGNATURE = (
-    "░█▀▄░█░█░░░█▀▀░█▀█░█▀█░█▀▄░█░█░█░░░█▀▀░█▀▀",
-    "░█▀▄░░█░░░░█▀▀░█▀█░█▀▀░█▀▄░█░█░█░░░█▀▀░▀▀█",
-    "░▀▀░░░▀░░░░▀▀▀░▀░▀░▀░░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀▀▀",
+    "█▀▄ █ █   █▀▀ █▀█ █▀█ █▀▄ █ █ █   █▀▀ █▀▀",
+    "█▀▄  █    █▀▀ █▀█ █▀▀ █▀▄ █ █ █   █▀▀ ▀▀█",
+    "▀▀   ▀    ▀▀▀ ▀ ▀ ▀   ▀ ▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀",
 )
 EAPX_SUBTITLE = "Android Port eXtractor"
 
@@ -533,6 +533,7 @@ class Progress:
         self.done_bytes = 0
         self.started = time.time()
         self.tty = self._open_tty(tty)
+        self.tty_started = False
 
     def _open_tty(self, override):
         """The console TTY is the whole UI.
@@ -580,6 +581,9 @@ class Progress:
 
         logo = EAPX_LOGO if branded else ("EAPX",)
         signature = EAPRULES_SIGNATURE if branded else ("BY EAPRULES",)
+        subtitle = "%s %s v%s" % (
+            EAPX_SUBTITLE, "·" if branded else "-", VERSION
+        )
         width = min(34, max(8, columns - 12))
         filled = max(0, min(width, overall * width // 1000))
         full, empty = ("█", "░") if branded else ("#", "-")
@@ -605,32 +609,36 @@ class Progress:
                 )
             return value.center(columns)
 
-        body = [""]
-        body.extend(centred(line) for line in logo)
-        body.extend([
-            "",
-            centred(EAPX_SUBTITLE),
-            "",
-            centred(heading),
-            centred(self.title),
-            "",
-            centred("[%s] %3d%%" % (bar, overall // 10)),
-            "",
-            centred(message),
-        ])
+        if rows >= 20:
+            body_values = (
+                [""] + list(logo) + ["", subtitle, "", heading, self.title, "",
+                 "[%s] %3d%%" % (bar, overall // 10), "", message]
+            )
+        else:
+            body_values = (
+                list(logo) + [subtitle, heading, self.title,
+                              "[%s] %3d%%" % (bar, overall // 10), message]
+            )
         if detail:
-            body.append(centred(detail))
+            body_values.append(detail)
         if eta:
-            body.append(centred(eta))
+            body_values.append(eta)
+        body = [centred(line) for line in body_values]
 
         separator_glyph = "─" if branded else "-"
         separator_width = min(columns, max(len(line) for line in signature))
         footer = [centred(separator_glyph * separator_width)]
         footer.extend(centred(line) for line in signature)
-        padding = [""] * max(1, rows - len(body) - len(footer))
+        body = body[:max(0, rows - len(footer))]
+        blank = " " * columns
+        padding = [blank] * max(0, rows - len(body) - len(footer))
+        frame = "\n".join(body + padding + footer)
+        prefix = "\033[H" if self.tty_started else "\033[?25l\033[H\033[2J"
+        suffix = "\033[?25h" if state in (2, 3) else ""
         try:
-            self.tty.write("\033[H\033[2J" + "\n".join(body + padding + footer) + "\n")
+            self.tty.write(prefix + frame + suffix)
             self.tty.flush()
+            self.tty_started = True
         except (OSError, UnicodeError):
             self.tty = None
 
