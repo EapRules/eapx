@@ -8,6 +8,7 @@ foreign files under an install root, and recipes that lie.
 import json
 import hashlib
 import os
+import re
 import shutil
 import struct
 import tempfile
@@ -747,6 +748,11 @@ class PortMasterTests(Base):
             "▙▖▌▌▙▌▚▘",
             "▙▖▛▌▌ ▌▌",
         ))
+        self.assertEqual(eapx.EAPRULES_SIGNATURE, (
+            "█▀▄ █ █   █▀▀ █▀█ █▀█ █▀▄ █ █ █   █▀▀ █▀▀",
+            "█▀▄  █    █▀▀ █▀█ █▀▀ █▀▄ █ █ █   █▀▀ ▀▀█",
+            "▀▀   ▀    ▀▀▀ ▀ ▀ ▀   ▀ ▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀",
+        ))
         screen = io.StringIO()
         progress = eapx.Progress(
             None, eapx.Logger(None, verbose=False), title="Synthetic Game",
@@ -760,9 +766,60 @@ class PortMasterTests(Base):
         lines = [line.strip() for line in screen.getvalue().splitlines()]
         for line in eapx.EAPX_LOGO + eapx.EAPRULES_SIGNATURE:
             self.assertIn(line, lines)
-        self.assertIn("Android Port eXtractor", lines)
+        self.assertIn("Android Port eXtractor · v%s" % eapx.VERSION, lines)
         self.assertIn("IMPORTING", lines)
         self.assertIn("Synthetic Game", lines)
+
+    def test_tty_version_is_read_from_the_engine_constant(self):
+        import io
+        original = eapx.VERSION
+        screen = io.StringIO()
+        progress = eapx.Progress(
+            None, eapx.Logger(None, verbose=False), title="Synthetic Game",
+            tty="none", portmaster=None,
+        )
+        progress.tty = screen
+        try:
+            eapx.VERSION = "9.8.7"
+            progress.update(overall=1, message="LOOKING", force=True)
+        finally:
+            eapx.VERSION = original
+        self.assertIn("Android Port eXtractor · v9.8.7", screen.getvalue())
+
+    def test_tty_updates_in_place_without_scrolling(self):
+        class RecordingScreen:
+            encoding = "utf-8"
+
+            def __init__(self):
+                self.writes = []
+
+            def fileno(self):
+                raise OSError("not a real tty")
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                pass
+
+        screen = RecordingScreen()
+        progress = eapx.Progress(
+            None, eapx.Logger(None, verbose=False), title="Synthetic Game",
+            tty="none", portmaster=None,
+        )
+        progress.tty = screen
+        progress.update(overall=100, message="READING", force=True)
+        progress.update(overall=200, message="EXTRACTING", force=True)
+
+        self.assertEqual(len(screen.writes), 2)
+        self.assertIn("\033[2J", screen.writes[0])
+        self.assertNotIn("\033[2J", screen.writes[1])
+        self.assertTrue(screen.writes[1].startswith("\033[H"))
+        for write in screen.writes:
+            self.assertFalse(write.endswith("\n"))
+            frame = re.sub(r"\033\[[0-9;?]*[A-Za-z]", "", write)
+            self.assertEqual(len(frame.split("\n")), 24)
+            self.assertTrue(frame.rstrip().endswith(eapx.EAPRULES_SIGNATURE[-1]))
 
     def test_tty_progress_has_an_ascii_fallback(self):
         class AsciiScreen:

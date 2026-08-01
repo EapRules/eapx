@@ -5,10 +5,13 @@ view, speak the patcher protocol when the corresponding environment is present,
 and remove a recipe-declared placeholder only after a successful commit.
 
 The full-screen TTY view identifies the tool as **EAPX — Android Port
-eXtractor**, shows `recipe.title` as the game being imported, and carries a
-`BY EAPRULES` footer. The artwork is presentation only: it is not written to
-the log or sent through the patcher protocol. Terminals without compatible
-Unicode encoding receive an ASCII-only fallback.
+eXtractor**, reads its displayed version directly from the engine's `VERSION`,
+shows `recipe.title` as the game being imported, and carries a `BY EAPRULES`
+footer. It clears once, then rewrites a fixed-size frame in place without a
+trailing newline, so progress updates neither flicker nor scroll the footer.
+The artwork is presentation only: it is not written to the log or sent through
+the patcher protocol. Terminals without compatible Unicode encoding receive an
+ASCII-only fallback.
 
 Useful install flags:
 

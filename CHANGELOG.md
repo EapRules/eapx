@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+- Update the TTY frame in place instead of clearing it for every progress
+  change, eliminating visible flicker.
+- Keep the frame within the terminal's exact row count and omit the trailing
+  newline that scrolled and damaged the footer's last row.
+- Use the corrected `BY EAPRULES` artwork and show the current engine version
+  directly from the `VERSION` constant.
+
 ## 0.4.0
 
 - Brand the optional TTY progress screen as EAPX, “Android Port eXtractor”,
