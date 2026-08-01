@@ -6,6 +6,12 @@
   with a `BY EAPRULES` footer.
 - Keep logs and the PortMaster patcher protocol unchanged, and fall back to an
   ASCII-only presentation when the terminal cannot encode the block artwork.
+- Document candidate roots, repeated explicit inputs, immediate-child
+  discovery, APK/data-directory composition, and raw Android backup layouts.
+- Clarify that optional extraction rules still validate non-empty partial
+  matches before results from different rules are merged.
+- Add regression coverage for multi-source aggregation and the recommended
+  top-level validation pattern for output trees assembled by several rules.
 
 ## 0.3.0
 

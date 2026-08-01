@@ -221,6 +221,21 @@ El parser de AndroidManifest existe solo para leer el `package`. Devuelve `None`
 cualquier duda: un paquete ilegible es una pista de agrupamiento que perdemos, nunca un
 motivo para fallar. Está fuzzeado por truncado en cada offset y por flip de cada byte.
 
+### 5.2 Raíces y composición de donors
+
+Cada hijo inmediato de un directorio de búsqueda es un candidato. Una carpeta se
+presenta como un árbol cuyas entradas son relativas a esa carpeta; no dispara un nuevo
+descubrimiento recursivo de APKs o subcarpetas. `--input` repetido expresa el mismo
+modelo de manera explícita y reemplaza el barrido automático para esa ejecución.
+
+Dentro de un grupo, una regla `entries` puede reunir entradas de varios candidatos. Sus
+validadores de árbol se aplican a lo reunido por **esa regla**, antes de fusionar los
+resultados de reglas distintas. `required: false` solo permite cero coincidencias: si
+hay alguna, debe satisfacer los validadores de la regla. La completitud de un árbol
+construido por varias reglas se declara en el `validate` superior.
+
+[`docs/DONORS.md`](docs/DONORS.md) es la referencia operativa de este contrato.
+
 ## 6. Selección de ABI
 
 **El ABI no es una dimensión de ambigüedad, es una preferencia.** Esta es la corrección
