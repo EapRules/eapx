@@ -41,6 +41,8 @@ Version 0.4.0 adds the branded EAPX TTY progress screen and formalizes the
 multi-source donor contract for APKs combined with external Android data.
 Version 0.4.1 stabilizes that screen's in-place rendering, corrects its footer,
 and displays the engine version automatically.
+Version 0.4.2 centres the presentation within a geometry-aware safe area and
+avoids framebuffer edges and full-width writes that can trigger auto-wrap.
 
 Recipes without these fields retain the 0.1.0 behavior. See
 [`docs/RECIPES.md`](docs/RECIPES.md), the
@@ -59,8 +61,8 @@ Ports should vendor an exact copy; runtime downloads, pip, and submodules are
 not part of the contract:
 
 ```text
-EAPX_VERSION=0.4.1
-EAPX_SHA256=d399f73fc5b387e8be27dd6aacd654925238f64f128714323b67f717aab03386
+EAPX_VERSION=0.4.2
+EAPX_SHA256=4fa589bfd91aaa6f1bf8fd8f5ed3ebc25c1b0b9b2bd48ab9c98595d19d930933
 ```
 
 Details are in [`docs/CONSUMING.md`](docs/CONSUMING.md). Architectural and

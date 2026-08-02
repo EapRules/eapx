@@ -406,9 +406,13 @@ mostrando la fase anterior.
 La pantalla TTY lleva identidad visual propia: `EAPX`, el subtítulo `Android Port
 eXtractor` con la versión tomada de `VERSION`, el título de la receta y la firma
 `BY EAPRULES`. Limpia una vez y después reescribe un frame de dimensiones fijas
-sin newline final, para no parpadear ni scrollear la última línea. El arte Unicode
-se degrada a texto ASCII si el encoding de la consola no lo admite. Nada de esta
-presentación entra al log ni altera el protocolo del patcher.
+sin newline final, para no parpadear ni scrollear la última línea. El contenido
+se centra dentro de un área segura calculada con la geometría actual, deja libres
+los bordes y nunca escribe en la última fila ni completa una fila física hasta el
+margen derecho. Cada fila se borra y posiciona por coordenadas; si cambia la
+geometría, la pantalla se limpia y se recalcula. El arte Unicode se degrada a
+texto ASCII si el encoding de la consola no lo admite. Nada de esta presentación
+entra al log ni altera el protocolo del patcher.
 
 ### 9.0 Tres canales, en orden de preferencia
 

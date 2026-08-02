@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2
+
+- Centre the complete TTY presentation inside a display-safe area derived from
+  the terminal's current width and height.
+- Keep visible content away from framebuffer edges and never write to the final
+  terminal row, protecting devices whose reported geometry includes overscan.
+- Position and erase rows explicitly instead of padding them to the physical
+  terminal width, preventing console auto-wrap glitches.
+- Recalculate and clear the screen when terminal geometry changes.
+
 ## 0.4.1
 
 - Update the TTY frame in place instead of clearing it for every progress

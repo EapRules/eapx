@@ -14,6 +14,7 @@ import struct
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 import eapx
 
@@ -763,12 +764,12 @@ class PortMasterTests(Base):
             overall=560, message="EXTRACTING GAME DATA",
             detail="chapter.dat", force=True,
         )
-        lines = [line.strip() for line in screen.getvalue().splitlines()]
         for line in eapx.EAPX_LOGO + eapx.EAPRULES_SIGNATURE:
-            self.assertIn(line, lines)
-        self.assertIn("Android Port eXtractor · v%s" % eapx.VERSION, lines)
-        self.assertIn("IMPORTING", lines)
-        self.assertIn("Synthetic Game", lines)
+            self.assertIn(line, screen.getvalue())
+        self.assertIn("Android Port eXtractor · v%s" % eapx.VERSION,
+                      screen.getvalue())
+        self.assertIn("IMPORTING", screen.getvalue())
+        self.assertIn("Synthetic Game", screen.getvalue())
 
     def test_tty_version_is_read_from_the_engine_constant(self):
         import io
@@ -814,12 +815,131 @@ class PortMasterTests(Base):
         self.assertEqual(len(screen.writes), 2)
         self.assertIn("\033[2J", screen.writes[0])
         self.assertNotIn("\033[2J", screen.writes[1])
-        self.assertTrue(screen.writes[1].startswith("\033[H"))
+        self.assertTrue(screen.writes[1].startswith("\033[?25l"))
         for write in screen.writes:
             self.assertFalse(write.endswith("\n"))
-            frame = re.sub(r"\033\[[0-9;?]*[A-Za-z]", "", write)
-            self.assertEqual(len(frame.split("\n")), 24)
-            self.assertTrue(frame.rstrip().endswith(eapx.EAPRULES_SIGNATURE[-1]))
+            self.assertNotIn("\n", write)
+            positions = [
+                (int(row), int(column))
+                for row, column in re.findall(r"\033\[(\d+);(\d+)H", write)
+            ]
+            self.assertTrue(positions)
+            self.assertTrue(all(row < 24 for row, _column in positions))
+            self.assertIn(eapx.EAPRULES_SIGNATURE[-1], write)
+
+    def test_tty_centres_content_inside_a_safe_area(self):
+        class RecordingScreen:
+            encoding = "utf-8"
+
+            def __init__(self):
+                self.value = ""
+
+            def fileno(self):
+                return 123
+
+            def write(self, value):
+                self.value += value
+
+            def flush(self):
+                pass
+
+        screen = RecordingScreen()
+        progress = eapx.Progress(
+            None, eapx.Logger(None, verbose=False), title="Synthetic Game",
+            tty="none", portmaster=None,
+        )
+        progress.tty = screen
+        terminal_size = os.terminal_size((48, 16))
+        with mock.patch.object(eapx.os, "get_terminal_size",
+                               return_value=terminal_size):
+            progress.update(overall=560, message="EXTRACTING", force=True)
+
+        writes = re.findall(r"\033\[(\d+);(\d+)H([^\033]*)", screen.value)
+        visible = [
+            (int(row), int(column), value)
+            for row, column, value in writes if value
+        ]
+        self.assertTrue(visible)
+        for row, column, value in visible:
+            self.assertGreaterEqual(row, 2)
+            self.assertLessEqual(row, 15)
+            self.assertGreaterEqual(column, 3)
+            self.assertLessEqual(column + len(value) - 1, 46)
+        first = min(row for row, _column, _value in visible)
+        last = max(row for row, _column, _value in visible)
+        self.assertGreater(first, 1)
+        self.assertLess(last, 16)
+        signature = next(
+            (row, column, value) for row, column, value in visible
+            if value == eapx.EAPRULES_SIGNATURE[-1]
+        )
+        self.assertEqual(signature[1],
+                         3 + (44 - len(signature[2])) // 2)
+
+    def test_tty_clears_again_when_the_terminal_geometry_changes(self):
+        class RecordingScreen:
+            encoding = "utf-8"
+
+            def __init__(self):
+                self.writes = []
+
+            def fileno(self):
+                return 123
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                pass
+
+        screen = RecordingScreen()
+        progress = eapx.Progress(
+            None, eapx.Logger(None, verbose=False), title="Synthetic Game",
+            tty="none", portmaster=None,
+        )
+        progress.tty = screen
+        with mock.patch.object(
+                eapx.os, "get_terminal_size",
+                side_effect=(os.terminal_size((80, 24)),
+                             os.terminal_size((64, 20)))):
+            progress.update(overall=100, message="READING", force=True)
+            progress.update(overall=200, message="EXTRACTING", force=True)
+        self.assertEqual(len(screen.writes), 2)
+        self.assertIn("\033[2J", screen.writes[0])
+        self.assertIn("\033[2J", screen.writes[1])
+
+    def test_tty_short_layout_keeps_the_progress_bar_in_bounds(self):
+        class RecordingScreen:
+            encoding = "utf-8"
+
+            def __init__(self):
+                self.value = ""
+
+            def fileno(self):
+                return 123
+
+            def write(self, value):
+                self.value += value
+
+            def flush(self):
+                pass
+
+        screen = RecordingScreen()
+        progress = eapx.Progress(
+            None, eapx.Logger(None, verbose=False), title="Synthetic Game",
+            tty="none", portmaster=None,
+        )
+        progress.tty = screen
+        with mock.patch.object(
+                eapx.os, "get_terminal_size",
+                return_value=os.terminal_size((80, 10))):
+            progress.update(overall=560, message="EXTRACTING", force=True)
+        self.assertIn(" 56%", screen.value)
+        positions = [
+            int(row) for row in re.findall(r"\033\[(\d+);\d+H", screen.value)
+        ]
+        self.assertTrue(positions)
+        self.assertTrue(all(row < 10 for row in positions))
 
     def test_tty_progress_has_an_ascii_fallback(self):
         class AsciiScreen:
