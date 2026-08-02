@@ -9,6 +9,11 @@ eXtractor**, reads its displayed version directly from the engine's `VERSION`,
 shows `recipe.title` as the game being imported, and carries a `BY EAPRULES`
 footer. It clears once, then rewrites a fixed-size frame in place without a
 trailing newline, so progress updates neither flicker nor scroll the footer.
+The complete block is centred in a safe area calculated from the current
+terminal geometry. It keeps clear of the screen edges, never writes to the last
+row, and uses explicit row positioning instead of full-width padding, avoiding
+overscan clipping and framebuffer auto-wrap. A geometry change triggers a clean
+recalculation.
 The artwork is presentation only: it is not written to the log or sent through
 the patcher protocol. Terminals without compatible Unicode encoding receive an
 ASCII-only fallback.
